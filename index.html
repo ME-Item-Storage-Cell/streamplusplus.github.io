@@ -2078,6 +2078,7 @@ body.night .sb-close{background:rgba(255,255,255,.1)}
         <!-- Header -->
         <div class="mh-tiles-header">
           <span class="mh-tiles-title">stream<span style="opacity:.5">.</span></span>
+          <button onclick="mhShowICSImport()" style="font-size:11px;font-family:'Geist Mono',monospace;color:var(--t3);background:rgba(0,0,0,.05);border:1px solid var(--border);border-radius:8px;padding:5px 10px;cursor:pointer;-webkit-tap-highlight-color:transparent">📅 Import timetable</button>
         </div>
 
         <!-- TILES -->
@@ -4459,6 +4460,12 @@ function applyICS(data){
     if(TT[day]!==undefined)TT[day]=data[day];
   }
   populateSubjectDropdowns();
+  // Refresh mobile countdown and schedule if on mobile
+  if(window.innerWidth<=640){
+    mhRenderSched();
+    mhUpdateCountdown();
+    mhRenderHeroPanel();
+  }
 }
 
 /* Build subject lists from whatever is actually in the timetable.
@@ -5534,12 +5541,6 @@ function mhStartCountdown(){
 }
 
 function mhUpdateCountdown(){
-  const now=new Date();
-  const nm=now.getHours()*60+now.getMinutes()+now.getSeconds()/60;
-  const DOW=['sun','mon','tue','wed','thu','fri','sat'][now.getDay()];
-  let periods=[];
-  try{const ics=JSON.parse(localStorage.getItem('st_ics')||'null');if(ics&&ics[DOW])periods=ics[DOW];}catch{}
-
   const timerEl=document.getElementById('mh-count-timer');
   const labelEl=document.getElementById('mh-count-label');
   const subEl=document.getElementById('mh-count-sub');
@@ -5547,38 +5548,47 @@ function mhUpdateCountdown(){
   const nextEl=document.getElementById('mh-hero-next');
   if(!timerEl)return;
 
-  // p.s = [h,m] start, p.e = [h,m] end, p.subj = subject name
-  const toMin=p=>{const s=p.s||[0,0];return s[0]*60+s[1];};
-  const toEnd=p=>{const e=p.e||[0,0];return e[0]*60+e[1];};
-  const cur=periods.find(p=>nm>=toMin(p)&&nm<toEnd(p));
-  const nxt=periods.find(p=>toMin(p)>nm);
+  const now=new Date();
+  const nm=toM(now.getHours(),now.getMinutes())+now.getSeconds()/60;
+  const {cur,nxt,weekend}=getCurNxt();
+
+  if(weekend){
+    timerEl.textContent='——';
+    if(labelEl)labelEl.textContent='weekend';
+    if(subEl)subEl.textContent='enjoy your break';
+    if(arcEl)arcEl.style.strokeDashoffset='628';
+    if(nextEl)nextEl.textContent='';
+    return;
+  }
 
   if(cur){
-    const totalMin=toEnd(cur)-toMin(cur);
-    const remSec=(toEnd(cur)-nm)*60;
+    const totalMin=toM(...cur.e)-toM(...cur.s);
+    const remSec=(toM(...cur.e)-nm)*60;
     const remMin=Math.floor(remSec/60);
     const remSecR=Math.floor(remSec%60);
     timerEl.textContent=`${String(remMin).padStart(2,'0')}:${String(remSecR).padStart(2,'0')}`;
-    if(labelEl)labelEl.textContent='until end of period';
-    if(subEl)subEl.textContent=cur.subj||'Current period';
-    const pct=remSec/(totalMin*60);
+    if(labelEl)labelEl.textContent=cur.subj||'Current period';
+    if(subEl)subEl.textContent=cur.room?`Room ${cur.room}`:'';
+    const pct=Math.max(0,remSec/(totalMin*60));
     if(arcEl)arcEl.style.strokeDashoffset=(628*(1-pct)).toFixed(1);
-    if(nextEl)nextEl.textContent=nxt?`Next: ${nxt.subj||'—'}  ${String(nxt.s[0]).padStart(2,'0')}:${String(nxt.s[1]).padStart(2,'0')}`:'';
+    if(nextEl){
+      if(nxt)nextEl.textContent=`next · ${nxt.subj||'—'} at ${String(nxt.s[0]).padStart(2,'0')}:${String(nxt.s[1]).padStart(2,'0')}${nxt.room?' · room '+nxt.room:''}`;
+      else nextEl.textContent='last period today';
+    }
   }else if(nxt){
-    const diffSec=(toMin(nxt)-nm)*60;
+    const diffSec=(toM(...nxt.s)-nm)*60;
     const diffMin=Math.floor(diffSec/60);
     const diffSecR=Math.floor(diffSec%60);
     timerEl.textContent=`${String(diffMin).padStart(2,'0')}:${String(diffSecR).padStart(2,'0')}`;
     if(labelEl)labelEl.textContent='until next period';
     if(subEl)subEl.textContent=nxt.subj||'—';
     const pct=Math.min(1,diffSec/3600);
-    if(arcEl)arcEl.style.strokeDashoffset=(628*(1-pct)).toFixed(1);
-    if(nextEl)nextEl.textContent='';
+    if(arcEl)arcEl.style.strokeDashoffset=(628*pct).toFixed(1);
+    if(nextEl)nextEl.textContent=nxt.room?`room ${nxt.room}`:'';
   }else{
-    const isWeekend=now.getDay()===0||now.getDay()===6;
-    timerEl.textContent='——';
-    if(labelEl)labelEl.textContent=isWeekend?'weekend':'no more classes';
-    if(subEl)subEl.textContent=isWeekend?'enjoy your break':'see you tomorrow';
+    timerEl.textContent='done';
+    if(labelEl)labelEl.textContent='no more classes';
+    if(subEl)subEl.textContent='see you tomorrow';
     if(arcEl)arcEl.style.strokeDashoffset='628';
     if(nextEl)nextEl.textContent='';
   }
@@ -5640,26 +5650,33 @@ function mhSelDay(ds){
   if(ed)ed.value=ds;
 }
 
+function mhShowICSImport(){
+  // Close quick-add sheet if open
+  mhClose();
+  // Open the existing ICS import modal
+  showTTImport();
+}
+
 function mhRenderSched(){
   const el=document.getElementById('mh-sched');if(!el)return;
-  const tod=new Date();
-  const nm=tod.getHours()*60+tod.getMinutes();
-  const DOW=['sun','mon','tue','wed','thu','fri','sat'][tod.getDay()];
-  let periods=[];
-  try{const ics=JSON.parse(localStorage.getItem('st_ics')||'null');if(ics&&ics[DOW])periods=ics[DOW];}catch{}
-  if(!periods.length){el.innerHTML='<div class="mh-nil">No timetable for today</div>';return;}
+  const now=new Date();
+  const nm=toM(now.getHours(),now.getMinutes());
+  const dow=now.getDay();
+  if(dow<1||dow>5){el.innerHTML='<div class="mh-nil">No school today</div>';return;}
+  const periods=TT[DKEYS[dow]]||[];
+  if(!periods.length){
+    el.innerHTML='<div class="mh-nil">No timetable — <span style="text-decoration:underline;cursor:pointer" onclick="mhShowICSImport()">import .ics</span></div>';
+    return;
+  }
   el.innerHTML=periods.map(p=>{
-    const[sh,sm]=p.s||p.start||[0,0];
-    const[eh,em]=p.e||p.end||[0,0];
-    const sm2=sh*60+sm,em2=eh*60+em;
-    const isCur=nm>=sm2&&nm<em2;
-    const timeStr=`${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}`;
-    const sc=subjColour(p.subj||p.name);
-    const barStyle=sc?`background:${sc}`:'';
+    const sm=toM(...p.s),em=toM(...p.e);
+    const isCur=nm>=sm&&nm<em;
+    const timeStr=`${String(p.s[0]).padStart(2,'0')}:${String(p.s[1]).padStart(2,'0')}`;
+    const sc=subjColour(p.subj);
     return`<div class="mh-srow${isCur?' mh-scur':''}">
       <span class="mh-stime">${timeStr}</span>
-      <div class="mh-sbar${isCur?' cur':''}" style="${isCur&&sc?`background:${sc}`:barStyle}"></div>
-      <span class="mh-sname">${esc(p.subj||p.name||'—')}</span>
+      <div class="mh-sbar${isCur?' cur':''}" style="${sc?`background:${sc}`:''}"></div>
+      <span class="mh-sname">${esc(p.subj||'—')}</span>
       ${p.room?`<span class="mh-sroom">${esc(p.room)}</span>`:''}
     </div>`;
   }).join('');
