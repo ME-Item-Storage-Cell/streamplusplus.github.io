@@ -4849,6 +4849,50 @@ async function sbActivateSession(sess){
   closeSyncBadge();
 }
 
+async function sbActivateSession(sess){
+  sbAuthToken=sess.access_token;
+  sbUserId=sess.user?.id;
+  localStorage.setItem('sb_session',JSON.stringify(sess));
+  const remote=await sbLoadAll();
+  const hasRemote=remote&&Object.keys(remote).length>0;
+  if(hasRemote){
+    applyRemoteData(remote);
+    renderDash();renderTT();renderRems();renderHW();
+    showToast('Synced ✓');
+  }else{
+    await sbPushAll();
+    showToast('Account created ✓');
+  }
+  setSyncStatus(true,sess.user?.email);
+  closeSyncBadge();
+  sbStartAutoSync();
+}
+
+let _sbSyncInterval=null;
+function sbStartAutoSync(){
+  // Pull from Supabase when tab becomes visible (user switches back to tab)
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible'&&sbUserId)sbSilentPull();
+  },{once:false});
+  // Also poll every 30 seconds while logged in
+  if(_sbSyncInterval)clearInterval(_sbSyncInterval);
+  _sbSyncInterval=setInterval(()=>{if(sbUserId)sbSilentPull();},30000);
+}
+
+async function sbSilentPull(){
+  if(!sbUserId)return;
+  try{
+    const remote=await sbLoadAll();
+    if(remote&&Object.keys(remote).length>0){
+      applyRemoteData(remote);
+      renderDash();renderTT();renderRems();renderHW();
+      if(window.innerWidth<=640){
+        mhRenderRems();mhRenderHW();mhRenderExams();mhRenderCal();mhRenderTodayEvs();
+      }
+    }
+  }catch{}
+}
+
 async function sbSignOut(){
   try{await sbFetch('/auth/v1/logout',{method:'POST'});}catch{}
   sbAuthToken=null;sbUserId=null;
@@ -6068,6 +6112,7 @@ function syncMobileNav(){
             cddSyncAll();
           }
         });
+        sbStartAutoSync();
       }
     });
   }else{
