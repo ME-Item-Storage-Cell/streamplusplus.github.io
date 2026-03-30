@@ -186,8 +186,10 @@ body.night .sr-item:hover{background:rgba(255,255,255,.07)}
   .mni-dot{width:4px;height:4px;border-radius:50%;background:var(--text);opacity:0;transition:opacity .18s;margin-top:-2px}
   .mni.act .mni-dot{opacity:1}
 
-  /* Push page content above bottom bar */
+  /* Push page content above bottom bar — only when mobile nav visible */
   #page-stack{bottom:68px!important}
+  /* When pg-mobile is active, page-stack fills full screen */
+  body:has(#pg-mobile.act) #page-stack{bottom:0!important}
   #sw-float,#clock-widget{top:12px!important}
   /* Hide clock widget on mobile — not needed on mobile home */
   #clock-widget,#sw-float{display:none!important}
@@ -277,10 +279,10 @@ body.night .sr-item:hover{background:rgba(255,255,255,.07)}
   #pg-mobile.act{
     display:block!important;
     padding:0;
-    position:absolute;inset:0;
+    position:fixed;inset:0;
     overflow:hidden;
     overscroll-behavior:none;
-    touch-action:pan-x;
+    z-index:200;
   }
   /* On mobile, hide pg-dash completely — pg-mobile replaces it */
   #pg-dash{display:none!important}
@@ -310,7 +312,6 @@ body.night .sr-item:hover{background:rgba(255,255,255,.07)}
     padding:calc(env(safe-area-inset-top,0px) + 56px) 28px calc(env(safe-area-inset-bottom,0px) + 36px);
     overflow:hidden;
     /* Allow horizontal swipe to tiles, block vertical bounce */
-    touch-action:pan-x;
     overscroll-behavior:none;
     -webkit-overflow-scrolling:auto;
     /* Dark gradient background */
@@ -3191,24 +3192,29 @@ async function sbFetch(path,opts={}){
 async function sbSet(k,v){
   if(!sbUserId)return;
   try{
+    const ts=new Date().toISOString();
     await sbFetch('/rest/v1/entries',{
       method:'POST',
       headers:{'Prefer':'resolution=merge-duplicates'},
-      body:JSON.stringify({user_id:sbUserId,key:k,value:JSON.stringify(v),updated_at:new Date().toISOString()})
+      body:JSON.stringify({user_id:sbUserId,key:k,value:JSON.stringify(v),updated_at:ts})
     });
+    // Record when we last pushed this key so silent pull can skip older remote data
+    const localTs=JSON.parse(localStorage.getItem('sb_push_ts')||'{}');
+    localTs[k]=ts;
+    localStorage.setItem('sb_push_ts',JSON.stringify(localTs));
   }catch{}
 }
 
-// Read all keys for the current user from Supabase
+// Read all keys for the current user from Supabase (includes timestamps for conflict resolution)
 async function sbLoadAll(){
   if(!sbUserId)return null;
   try{
-    const r=await sbFetch(`/rest/v1/entries?select=key,value&user_id=eq.${sbUserId}`);
+    const r=await sbFetch(`/rest/v1/entries?select=key,value,updated_at&user_id=eq.${sbUserId}`);
     if(!r.ok)return null;
     const rows=await r.json();
     const out={};
     rows.forEach(row=>{
-      try{out[row.key]=JSON.parse(row.value);}catch{out[row.key]=row.value;}
+      try{out[row.key]={data:JSON.parse(row.value),updated_at:row.updated_at};}catch{out[row.key]={data:row.value,updated_at:row.updated_at};}
     });
     return out;
   }catch{return null;}
@@ -3259,19 +3265,20 @@ async function sbGetSession(){
 // Apply remote data over local state
 function applyRemoteData(remote){
   if(!remote)return;
-  const parse=(k,def)=>{const v=remote[k];return v!==undefined?v:def;};
-  rems=parse('st_r5',rems);localStorage.setItem('st_r5',JSON.stringify(rems));
-  evs=parse('st_e5',evs);localStorage.setItem('st_e5',JSON.stringify(evs));
-  logs=parse('st_l5',logs);localStorage.setItem('st_l5',JSON.stringify(logs));
-  papers=parse('st_p5',papers);localStorage.setItem('st_p5',JSON.stringify(papers));
-  exams=parse('st_x5',exams);localStorage.setItem('st_x5',JSON.stringify(exams));
-  hw=parse('st_hw',hw);localStorage.setItem('st_hw',JSON.stringify(hw));
-  if(remote['st_name']){localStorage.setItem('st_name',remote['st_name']);applyName(remote['st_name']);}
-  if(remote['st_ics']){
-    const ics=typeof remote['st_ics']==='string'?JSON.parse(remote['st_ics']):remote['st_ics'];
-    localStorage.setItem('st_ics',JSON.stringify(ics));applyICS(ics); // applyICS calls populateSubjectDropdowns
+  // remote[key] is now {data, updated_at} — extract just the data
+  const get=(k)=>{const v=remote[k];return v!==undefined?(v.data!==undefined?v.data:v):undefined;};
+  const r5=get('st_r5');if(r5!==undefined){rems=r5;localStorage.setItem('st_r5',JSON.stringify(rems));}
+  const e5=get('st_e5');if(e5!==undefined){evs=e5;localStorage.setItem('st_e5',JSON.stringify(evs));}
+  const l5=get('st_l5');if(l5!==undefined){logs=l5;localStorage.setItem('st_l5',JSON.stringify(logs));}
+  const p5=get('st_p5');if(p5!==undefined){papers=p5;localStorage.setItem('st_p5',JSON.stringify(papers));}
+  const x5=get('st_x5');if(x5!==undefined){exams=x5;localStorage.setItem('st_x5',JSON.stringify(exams));}
+  const hw5=get('st_hw');if(hw5!==undefined){hw=hw5;localStorage.setItem('st_hw',JSON.stringify(hw));}
+  const name=get('st_name');if(name){localStorage.setItem('st_name',name);applyName(name);}
+  const ics=get('st_ics');
+  if(ics){
+    const parsed=typeof ics==='string'?JSON.parse(ics):ics;
+    localStorage.setItem('st_ics',JSON.stringify(parsed));applyICS(parsed);
   }
-  // Re-render mobile home if on mobile
   if(window.innerWidth<=640){mhRenderHeroPanel();mhRenderRems();mhRenderHW();mhRenderCal();mhRenderExams();mhRenderTodayEvs();}
 }
 
@@ -4831,23 +4838,6 @@ function setSyncStatus(connected,email){
   }
 }
 
-async function sbActivateSession(sess){
-  sbAuthToken=sess.access_token;
-  sbUserId=sess.user?.id;
-  localStorage.setItem('sb_session',JSON.stringify(sess));
-  const remote=await sbLoadAll();
-  const hasRemote=remote&&Object.keys(remote).length>0;
-  if(hasRemote){
-    applyRemoteData(remote);
-    renderDash();renderTT();renderRems();renderHW();
-    showToast('Synced ✓');
-  }else{
-    await sbPushAll();
-    showToast('Account created ✓');
-  }
-  setSyncStatus(true,sess.user?.email);
-  closeSyncBadge();
-}
 
 async function sbActivateSession(sess){
   sbAuthToken=sess.access_token;
@@ -4883,13 +4873,25 @@ async function sbSilentPull(){
   if(!sbUserId)return;
   try{
     const remote=await sbLoadAll();
-    if(remote&&Object.keys(remote).length>0){
-      applyRemoteData(remote);
-      renderDash();renderTT();renderRems();renderHW();
-      if(window.innerWidth<=640){
-        mhRenderRems();mhRenderHW();mhRenderExams();mhRenderCal();mhRenderTodayEvs();
+    if(!remote||!Object.keys(remote).length)return;
+    // Only apply keys where Supabase updated_at is newer than our last push timestamp
+    const localTs=JSON.parse(localStorage.getItem('sb_push_ts')||'{}');
+    const DATA_KEYS=['st_r5','st_e5','st_l5','st_p5','st_x5','st_hw','st_name','st_ics'];
+    let changed=false;
+    const filtered={};
+    DATA_KEYS.forEach(k=>{
+      if(!remote[k])return;
+      const remoteTs=remote[k].updated_at;
+      const localT=localTs[k]||'';
+      // Apply only if remote is strictly newer than when we last pushed this key
+      if(remoteTs>localT){
+        filtered[k]=remote[k];
+        changed=true;
       }
-    }
+    });
+    if(!changed)return;
+    applyRemoteData(filtered);
+    renderDash();renderTT();renderRems();renderHW();
   }catch{}
 }
 
@@ -5507,7 +5509,7 @@ function mhGoTo(page){
 }
 
 function mhPagerSetup(){
-  // Block all vertical scroll/bounce on the hero panel
+  // Block vertical bounce on hero panel
   const hero=document.getElementById('mh-panel-hero');
   if(hero){
     let _hx=0,_hy=0;
@@ -5515,14 +5517,13 @@ function mhPagerSetup(){
     hero.addEventListener('touchmove',e=>{
       const dx=Math.abs(e.touches[0].clientX-_hx);
       const dy=Math.abs(e.touches[0].clientY-_hy);
-      // Only block vertical moves (bounce) — allow horizontal swipe through
       if(dy>dx)e.preventDefault();
     },{passive:false});
   }
-  // Double-tap anywhere on mobile page opens quick-add
+
+  // Double-tap anywhere opens quick-add
   let _lastTap=0;
   document.getElementById('pg-mobile')?.addEventListener('touchend',e=>{
-    // Ignore taps on interactive elements
     if(e.target.closest('button,a,.mh-rcheck,.mh-hcheck,.mh-cal-nbtn,.mh-tile-action,[onclick]'))return;
     const now=Date.now();
     if(now-_lastTap<300){
@@ -5532,44 +5533,59 @@ function mhPagerSetup(){
     }
     _lastTap=now;
   },{passive:false});
+
+  // Swipe detection — attach to pg-mobile so it works in PWA standalone mode
+  // Use passive:false so we can preventDefault and claim the gesture from iOS
+  const root=document.getElementById('pg-mobile');
+  if(!root||root._pagerSetup)return;
+  root._pagerSetup=true;
+  let sx=0,sy=0,locked=null,swiping=false;
   const pager=document.getElementById('mh-pager');
-  if(!pager||pager._pagerSetup)return;
-  pager._pagerSetup=true;
-  let startX=0,startY=0,locked=null;
 
-  pager.addEventListener('touchstart',e=>{
-    startX=e.touches[0].clientX;
-    startY=e.touches[0].clientY;
-    locked=null;
+  root.addEventListener('touchstart',e=>{
+    if(e.touches.length!==1)return;
+    sx=e.touches[0].clientX;
+    sy=e.touches[0].clientY;
+    locked=null;swiping=true;
   },{passive:true});
 
-  pager.addEventListener('touchmove',e=>{
-    const dx=e.touches[0].clientX-startX;
-    const dy=e.touches[0].clientY-startY;
+  root.addEventListener('touchmove',e=>{
+    if(!swiping||e.touches.length!==1)return;
+    const dx=e.touches[0].clientX-sx;
+    const dy=e.touches[0].clientY-sy;
     if(!locked){
-      if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>8){locked='h';}
-      else if(Math.abs(dy)>8){locked='v';}
+      if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>6){
+        locked='h';
+      }else if(Math.abs(dy)>6){
+        locked='v';
+      }
     }
-    // On tiles panel, vertical scroll is handled by the panel itself
-    // On hero panel, horizontal swipe should be fast
-    if(locked==='h'&&_mhPage===0){
-      // Live drag feedback on hero
-      const pct=Math.max(-1,Math.min(0,dx/window.innerWidth));
-      pager.style.transition='none';
-      pager.style.transform=`translateX(calc(-0% + ${dx*0.3}px))`;
+    if(locked==='h'){
+      // Claim the gesture — prevents iOS back swipe from firing
+      e.preventDefault();
+      // Live drag feedback on hero panel only
+      if(_mhPage===0&&pager){
+        pager.style.transition='none';
+        const clamp=Math.max(-window.innerWidth*0.5,Math.min(0,dx*0.4));
+        pager.style.transform=`translateX(${clamp}px)`;
+      } else if(_mhPage===1&&pager){
+        pager.style.transition='none';
+        const base=-window.innerWidth;
+        const clamp=Math.max(base,Math.min(base+window.innerWidth*0.5,base+dx*0.4));
+        pager.style.transform=`translateX(${clamp}px)`;
+      }
     }
-  },{passive:true});
+  },{passive:false});
 
-  pager.addEventListener('touchend',e=>{
-    pager.style.transition='';
-    pager.style.transform='';
-    const dx=e.changedTouches[0].clientX-startX;
-    const dy=e.changedTouches[0].clientY-startY;
-    if(locked==='h'||(!locked&&Math.abs(dx)>Math.abs(dy))){
-      if(dx<-50&&_mhPage===0)mhGoTo(1);
-      else if(dx>50&&_mhPage===1)mhGoTo(0);
-    }
-  });
+  root.addEventListener('touchend',e=>{
+    if(!swiping)return;
+    swiping=false;
+    if(pager){pager.style.transition='';pager.style.transform='';}
+    if(locked!=='h')return;
+    const dx=e.changedTouches[0].clientX-sx;
+    if(dx<-40&&_mhPage===0)mhGoTo(1);
+    else if(dx>40&&_mhPage===1)mhGoTo(0);
+  },{passive:true});
 }
 
 /* ── HERO PANEL: countdown + info ───────────────────── */
