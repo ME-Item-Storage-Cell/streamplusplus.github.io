@@ -827,7 +827,7 @@ body.night #pp-trend{opacity:.9}
 #notif-btn.on{color:#e53e3e}
 #notif-badge{position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:#e53e3e;border:1.5px solid var(--bg);display:none}
 #notif-btn.pending #notif-badge{display:block}
-body.night #notif-btn,body.night #syncbtn,body.night #settings-btn{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.1)}
+body.night #notif-btn,body.night #syncbtn,body.night #settings-btn{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.1);color:var(--text)}
 body.night #notif-btn:hover,body.night #syncbtn:hover,body.night #settings-btn:hover{background:rgba(255,255,255,.16);color:var(--text)}
 
 /* Global transition for smooth night mode switch */
@@ -1691,6 +1691,7 @@ body.night #st-cursor-group{background:rgba(255,255,255,.03);border-color:rgba(2
 body.night .st-card{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.08)}
 .st-card-wide{align-items:flex-start}
 .st-card-icon{font-size:22px;flex-shrink:0;width:36px;text-align:center;line-height:1}
+#st-night-card .st-card-icon{display:none}
 .st-card-body{flex:1;min-width:0}
 .st-card-title{font-size:13px;font-weight:600;color:var(--text);letter-spacing:-.01em}
 .st-card-desc{font-size:11px;color:var(--t3);margin-top:2px;line-height:1.5}
