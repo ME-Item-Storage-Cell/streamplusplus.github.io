@@ -345,21 +345,21 @@ function togglePin(){
     const nearDefault = pillX >= defaultX-3 && pillX <= defaultX+3 && pillY >= defaultY-3 && pillY <= defaultY+3;
     if(nearDefault){
       // Already near default position, just expand immediately
-      pill.style.left='0px';
-      pill.style.top='0px';
+      pill.style.left='8px';
+      pill.style.top='8px';
       pill.style.transform='none';
       applySB();
       // Update tracked position after expansion settles
       setTimeout(()=>{
-        pillX=0;pillY=0;
+        pillX=8;pillY=8;
         localStorage.setItem('stpx4',pillX);
         localStorage.setItem('stpy4',pillY);
       },350);
     }else{
-      // Stage 1: Rapidly animate position to (0,0) in 0.15s
+      // Stage 1: Rapidly animate position to (8,8) in 0.15s
       pill.style.transition='left .15s cubic-bezier(.4,0,.2,1),top .15s cubic-bezier(.4,0,.2,1)';
-      pill.style.left='0px';
-      pill.style.top='0px';
+      pill.style.left='8px';
+      pill.style.top='8px';
       pill.style.transform='none';
       // Stage 2: After position animation, trigger expansion (0.35s)
       setTimeout(()=>{
@@ -367,7 +367,7 @@ function togglePin(){
         applySB();
         // Update tracked position after total animation settles (0.15s + 0.35s = 0.5s)
         setTimeout(()=>{
-          pillX=0;pillY=0;
+          pillX=8;pillY=8;
           localStorage.setItem('stpx4',pillX);
           localStorage.setItem('stpy4',pillY);
         },350);
@@ -423,8 +423,8 @@ function updateSettingsOverlayPosition(){
   const isPillOpen=pill.classList.contains('open');
   // When pinned, always use pinned padding regardless of actual position
   if(isPinned){
-    // Sidebar is pinned at 0,0 with 222px width - padding = 0 + 222 + 30 = 252px
-    overlay.style.paddingLeft='252px';
+    // Sidebar is pinned at 8,8 with 222px width - padding = 8 + 222 + 30 = 260px
+    overlay.style.paddingLeft='260px';
   }else if(pillX < -10 || pillX > 38){
     // Sidebar moved from original position - stick to left wall with fixed padding
     overlay.style.paddingLeft='24px';

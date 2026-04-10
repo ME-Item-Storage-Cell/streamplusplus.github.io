@@ -1066,9 +1066,9 @@ body.night #ctx-night-item.active-night svg{stroke:#0f0f0f;opacity:.9}
 #pill.open{width:216px;background:rgba(248,248,252,0.82)}
 #pill.pinned{
   position:fixed;
-  left:0;top:0;
+  left:8px;top:8px;
   width:222px;
-  height:100vh !important;
+  height:calc(100vh - 16px) !important;
   border-radius:0;
   border:none;
   border-right:1px solid var(--border);
@@ -1079,6 +1079,38 @@ body.night #ctx-night-item.active-night svg{stroke:#0f0f0f;opacity:.9}
   background:var(--bg);
   will-change:auto;
 }
+#pill.pinned::before{
+  content:'';
+  position:absolute;
+  top:-8px;
+  left:-72px;
+  right:0;
+  height:8px;
+  background:var(--bg);
+  z-index:8501;
+}
+body.night #pill.pinned::before{background:#0e0f12}
+#pill.pinned::after{
+  content:'';
+  position:absolute;
+  top:0;
+  left:-72px;
+  width:72px;
+  height:calc(100vh - 16px);
+  background:var(--bg);
+  z-index:8501;
+}
+body.night #pill.pinned::after{background:#0e0f12}
+#pill.pinned #pill-bottom-extension{
+  position:absolute;
+  bottom:-8px;
+  left:-72px;
+  right:0;
+  height:8px;
+  background:var(--bg);
+  z-index:8501;
+}
+body.night #pill.pinned #pill-bottom-extension{background:#0e0f12}
 body.night #pill.pinned{
   background:#0e0f12;
   border-right-color:rgba(255,255,255,0.08);
